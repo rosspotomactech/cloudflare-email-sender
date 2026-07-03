@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Cloudflare Email Sender
  * Description: Routes WordPress emails through the Cloudflare Email Service REST API.
- * Version: 1.3
+ * Version: 1.4
  * Author: Potomac Technologies, LLC
  * Author URI:  https://potomactech.net
  */
@@ -34,14 +34,15 @@
  
  add_action('admin_init', 'cf_email_settings_init');
  function cf_email_settings_init() {
-	 // Register settings WITH strict sanitization callbacks
 	 register_setting('cf_email_plugin_page', 'cf_email_account_id', 'sanitize_text_field');
 	 register_setting('cf_email_plugin_page', 'cf_email_api_token', 'sanitize_text_field');
 	 register_setting('cf_email_plugin_page', 'cf_email_from_address', 'sanitize_email');
-	 // Register the new optional From Name setting
 	 register_setting('cf_email_plugin_page', 'cf_email_from_name', 'sanitize_text_field');
+	 
+	 // Register the new Reply-To settings
+	 register_setting('cf_email_plugin_page', 'cf_email_reply_to', 'sanitize_email');
+	 register_setting('cf_email_plugin_page', 'cf_email_reply_to_override', 'absint'); // Validates as integer (1 or 0)
  
-	 // Process Test Email Submission
 	 if ( isset($_POST['cf_email_send_test']) && current_user_can('manage_options') ) {
 		 check_admin_referer('cf_email_test_action', 'cf_email_test_nonce');
 		 
@@ -99,6 +100,22 @@
 						 <p class="description">If provided, this will force the sender name for all outgoing emails (e.g., "My Website").</p>
 					 </td>
 				 </tr>
+				 <tr>
+					 <th>Default Reply-To (Optional)</th>
+					 <td>
+						 <input type="email" name="cf_email_reply_to" value="<?php echo esc_attr(get_option('cf_email_reply_to')); ?>" class="regular-text" />
+						 <p class="description">Email address to receive replies if no other Reply-To is specified by WordPress or a contact form.</p>
+					 </td>
+				 </tr>
+				 <tr>
+					 <th>Force Reply-To Override</th>
+					 <td>
+						 <label>
+							 <input type="checkbox" name="cf_email_reply_to_override" value="1" <?php checked(1, get_option('cf_email_reply_to_override'), true); ?> />
+							 Always use the Default Reply-To address above, overwriting any Reply-To addresses set by plugins (like contact forms).
+						 </label>
+					 </td>
+				 </tr>
 			 </table>
 			 <?php submit_button('Save Settings'); ?>
 		 </form>
@@ -106,7 +123,6 @@
 		 <hr>
  
 		 <h2>Send a Test Email</h2>
-		 <p>Enter an email address below to verify your Cloudflare REST API connection.</p>
 		 <form action="" method="post">
 			 <?php wp_nonce_field('cf_email_test_action', 'cf_email_test_nonce'); ?>
 			 <table class="form-table">
@@ -137,7 +153,6 @@
 			 return false;
 		 }
  
-		 // Securely parse and sanitize the recipient email address
 		 if ( is_array( $to ) ) {
 			 $to_address = sanitize_email( $to[0] );
 		 } else {
@@ -145,25 +160,73 @@
 		 }
  
 		 if ( ! is_email( $to_address ) ) {
-			  error_log('Cloudflare Email Sender: Invalid recipient email address.');
 			  return false;
 		 }
  
-		 // Format the sender correctly based on whether a name was provided
 		 $formatted_from = $from_email;
 		 if ( ! empty( $from_name ) ) {
 			 $formatted_from = sprintf( '%s <%s>', $from_name, $from_email );
 		 }
  
+		 // --- NEW: Header Parsing & Reply-To Logic ---
+		 $api_headers = array();
+		 $parsed_reply_to = '';
+ 
+		 // Extract existing headers sent by WordPress or plugins
+		 if ( ! empty( $headers ) ) {
+			 if ( ! is_array( $headers ) ) {
+				 $headers = explode( "\n", str_replace( "\r\n", "\n", $headers ) );
+			 }
+			 foreach ( $headers as $header ) {
+				 if ( empty( trim( $header ) ) ) continue;
+				 
+				 $parts = explode( ':', $header, 2 );
+				 if ( count( $parts ) === 2 ) {
+					 $header_name = trim( $parts[0] );
+					 $header_value = trim( $parts[1] );
+					 
+					 if ( strcasecmp( $header_name, 'Reply-To' ) === 0 ) {
+						 $parsed_reply_to = sanitize_text_field( $header_value );
+					 } else {
+						 // Pass other custom headers along to Cloudflare
+						 $api_headers[ sanitize_text_field( $header_name ) ] = sanitize_text_field( $header_value );
+					 }
+				 }
+			 }
+		 }
+ 
+		 $settings_reply_to = sanitize_email( get_option('cf_email_reply_to') );
+		 $force_override    = get_option('cf_email_reply_to_override') == 1;
+ 
+		 $final_reply_to = '';
+		 if ( ! empty( $parsed_reply_to ) ) {
+			 // A Reply-To was passed by a plugin. Do we override it?
+			 $final_reply_to = ( $force_override && ! empty( $settings_reply_to ) ) ? $settings_reply_to : $parsed_reply_to;
+		 } elseif ( ! empty( $settings_reply_to ) ) {
+			 // No Reply-To was passed, use default if it exists
+			 $final_reply_to = $settings_reply_to;
+		 }
+ 
+		 // Set the custom header for the REST API
+		 if ( ! empty( $final_reply_to ) ) {
+			 $api_headers['Reply-To'] = $final_reply_to;
+		 }
+		 // --------------------------------------------
+ 
 		 $url = 'https://api.cloudflare.com/client/v4/accounts/' . sanitize_text_field($account_id) . '/email/sending/send';
  
 		 $body = array(
 			 'to'      => $to_address,
-			 'from'    => $formatted_from, // Utilizes the optionally formatted name and address string
+			 'from'    => $formatted_from, 
 			 'subject' => sanitize_text_field($subject), 
 			 'html'    => wp_kses_post($message),
 			 'text'    => wp_strip_all_tags($message)
 		 );
+ 
+		 // Append the custom headers to the payload if any exist
+		 if ( ! empty( $api_headers ) ) {
+			 $body['headers'] = $api_headers;
+		 }
  
 		 $args = array(
 			 'method'  => 'POST',
@@ -183,12 +246,10 @@
 		 }
  
 		 $response_code = wp_remote_retrieve_response_code( $response );
-		 $response_body = wp_remote_retrieve_body( $response );
- 
 		 if ( $response_code >= 200 && $response_code < 300 ) {
 			 return true;
 		 } else {
-			 error_log('Cloudflare Email Sender API Error (Code ' . sanitize_text_field($response_code) . '): ' . wp_strip_all_tags($response_body));
+			 error_log('Cloudflare Email Sender API Error (Code ' . sanitize_text_field($response_code) . '): ' . wp_strip_all_tags(wp_remote_retrieve_body( $response )));
 			 return false;
 		 }
 	 }
