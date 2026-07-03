@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Cloudflare Email Sender
  * Description: Routes WordPress emails through the Cloudflare Email Service REST API.
- * Version: 1.4
+ * Version: 1.4.1
  * Author: Potomac Technologies, LLC
  * Author URI:  https://potomactech.net
  */
@@ -38,10 +38,8 @@
 	 register_setting('cf_email_plugin_page', 'cf_email_api_token', 'sanitize_text_field');
 	 register_setting('cf_email_plugin_page', 'cf_email_from_address', 'sanitize_email');
 	 register_setting('cf_email_plugin_page', 'cf_email_from_name', 'sanitize_text_field');
-	 
-	 // Register the new Reply-To settings
 	 register_setting('cf_email_plugin_page', 'cf_email_reply_to', 'sanitize_email');
-	 register_setting('cf_email_plugin_page', 'cf_email_reply_to_override', 'absint'); // Validates as integer (1 or 0)
+	 register_setting('cf_email_plugin_page', 'cf_email_reply_to_override', 'absint'); 
  
 	 if ( isset($_POST['cf_email_send_test']) && current_user_can('manage_options') ) {
 		 check_admin_referer('cf_email_test_action', 'cf_email_test_nonce');
@@ -168,7 +166,6 @@
 			 $formatted_from = sprintf( '%s <%s>', $from_name, $from_email );
 		 }
  
-		 // --- NEW: Header Parsing & Reply-To Logic ---
 		 $api_headers = array();
 		 $parsed_reply_to = '';
  
@@ -207,12 +204,6 @@
 			 $final_reply_to = $settings_reply_to;
 		 }
  
-		 // Set the custom header for the REST API
-		 if ( ! empty( $final_reply_to ) ) {
-			 $api_headers['Reply-To'] = $final_reply_to;
-		 }
-		 // --------------------------------------------
- 
 		 $url = 'https://api.cloudflare.com/client/v4/accounts/' . sanitize_text_field($account_id) . '/email/sending/send';
  
 		 $body = array(
@@ -222,6 +213,11 @@
 			 'html'    => wp_kses_post($message),
 			 'text'    => wp_strip_all_tags($message)
 		 );
+ 
+		 // --- NEW: Add Reply-To as a root parameter, NOT a custom header ---
+		 if ( ! empty( $final_reply_to ) ) {
+			 $body['reply_to'] = $final_reply_to;
+		 }
  
 		 // Append the custom headers to the payload if any exist
 		 if ( ! empty( $api_headers ) ) {
