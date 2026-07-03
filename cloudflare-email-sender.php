@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Cloudflare Email Sender
  * Description: Routes WordPress emails through the Cloudflare Email Service REST API.
- * Version: 1.1
+ * Version: 1.1.1
  * Author: Potomac Technologies, LLC
  * Author URI:  https://potomactech.net
  */
