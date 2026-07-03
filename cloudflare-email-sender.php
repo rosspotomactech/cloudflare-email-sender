@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Cloudflare Email Sender
  * Description: Routes WordPress emails through the Cloudflare Email Service REST API.
- * Version: 1.2
+ * Version: 1.3
  * Author: Potomac Technologies, LLC
  * Author URI:  https://potomactech.net
  */
@@ -26,7 +26,7 @@
  // Authentication token to access Github library
  $myUpdateChecker->setAuthentication('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');
 
-// 1. Register Settings Page & Handle Test Email
+ // 1. Register Settings Page & Handle Test Email
  add_action('admin_menu', 'cf_email_add_admin_menu');
  function cf_email_add_admin_menu() {
 	 add_options_page('Cloudflare Email', 'Cloudflare Email', 'manage_options', 'cloudflare-email-sender', 'cf_email_settings_page');
@@ -38,13 +38,13 @@
 	 register_setting('cf_email_plugin_page', 'cf_email_account_id', 'sanitize_text_field');
 	 register_setting('cf_email_plugin_page', 'cf_email_api_token', 'sanitize_text_field');
 	 register_setting('cf_email_plugin_page', 'cf_email_from_address', 'sanitize_email');
+	 // Register the new optional From Name setting
+	 register_setting('cf_email_plugin_page', 'cf_email_from_name', 'sanitize_text_field');
  
 	 // Process Test Email Submission
 	 if ( isset($_POST['cf_email_send_test']) && current_user_can('manage_options') ) {
-		 // Verify nonce to prevent Cross-Site Request Forgery (CSRF)
 		 check_admin_referer('cf_email_test_action', 'cf_email_test_nonce');
 		 
-		 // Sanitize the input email address
 		 $to_email = sanitize_email($_POST['cf_email_test_to']);
 		 
 		 if ( is_email($to_email) ) {
@@ -65,7 +65,6 @@
  }
  
  function cf_email_settings_page() {
-	 // Strict capability check
 	 if ( ! current_user_can( 'manage_options' ) ) {
 		 return;
 	 }
@@ -91,7 +90,14 @@
 				 </tr>
 				 <tr>
 					 <th>From Address</th>
-					 <td><input type="email" name="cf_email_from_address" value="<?php echo esc_attr(get_option('cf_email_from_address')); ?>" class="regular-text" /></td>
+					 <td><input type="email" name="cf_email_from_address" value="<?php echo esc_attr(get_option('cf_email_from_address')); ?>" class="regular-text" required /></td>
+				 </tr>
+				 <tr>
+					 <th>From Name (Optional)</th>
+					 <td>
+						 <input type="text" name="cf_email_from_name" value="<?php echo esc_attr(get_option('cf_email_from_name')); ?>" class="regular-text" />
+						 <p class="description">If provided, this will force the sender name for all outgoing emails (e.g., "My Website").</p>
+					 </td>
 				 </tr>
 			 </table>
 			 <?php submit_button('Save Settings'); ?>
@@ -124,6 +130,7 @@
 		 $account_id = get_option('cf_email_account_id');
 		 $api_token  = get_option('cf_email_api_token');
 		 $from_email = sanitize_email(get_option('cf_email_from_address'));
+		 $from_name  = sanitize_text_field(get_option('cf_email_from_name'));
  
 		 if ( empty($account_id) || empty($api_token) || empty($from_email) ) {
 			 error_log('Cloudflare Email Sender: Missing configuration settings.');
@@ -142,13 +149,19 @@
 			  return false;
 		 }
  
+		 // Format the sender correctly based on whether a name was provided
+		 $formatted_from = $from_email;
+		 if ( ! empty( $from_name ) ) {
+			 $formatted_from = sprintf( '%s <%s>', $from_name, $from_email );
+		 }
+ 
 		 $url = 'https://api.cloudflare.com/client/v4/accounts/' . sanitize_text_field($account_id) . '/email/sending/send';
  
 		 $body = array(
 			 'to'      => $to_address,
-			 'from'    => $from_email,
+			 'from'    => $formatted_from, // Utilizes the optionally formatted name and address string
 			 'subject' => sanitize_text_field($subject), 
-			 'html'    => wp_kses_post($message), // Ensures HTML is safe
+			 'html'    => wp_kses_post($message),
 			 'text'    => wp_strip_all_tags($message)
 		 );
  
