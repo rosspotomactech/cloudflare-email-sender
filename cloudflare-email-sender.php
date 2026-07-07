@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Cloudflare Email Sender
  * Description: Routes WordPress emails through the Cloudflare Email Service REST API.
- * Version: 1.4.1
+ * Version: 1.5
  * Author: Potomac Technologies, LLC
  * Author URI:  https://potomactech.net
  */
@@ -70,8 +70,6 @@
 	 ?>
 	 <div class="wrap">
 		 <h2>Cloudflare Email Settings</h2>
-		 
-		 <?php settings_errors('cf_email_messages'); ?>
  
 		 <form action="options.php" method="post">
 			 <?php
@@ -163,7 +161,9 @@
  
 		 $formatted_from = $from_email;
 		 if ( ! empty( $from_name ) ) {
-			 $formatted_from = sprintf( '%s <%s>', $from_name, $from_email );
+			 // NEW: Strip existing quotes to prevent breaking string, then wrap in double quotes
+			 $clean_from_name = str_replace( '"', '', $from_name );
+			 $formatted_from = sprintf( '"%s" <%s>', $clean_from_name, $from_email );
 		 }
  
 		 $api_headers = array();
@@ -214,7 +214,7 @@
 			 'text'    => wp_strip_all_tags($message)
 		 );
  
-		 // --- NEW: Add Reply-To as a root parameter, NOT a custom header ---
+		 // Add Reply-To as a root parameter, NOT a custom header
 		 if ( ! empty( $final_reply_to ) ) {
 			 $body['reply_to'] = $final_reply_to;
 		 }
