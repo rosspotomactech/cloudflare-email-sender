@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Cloudflare Email Sender
  * Description: Routes WordPress emails through the Cloudflare Email Service REST API.
- * Version: 1.5.1
+ * Version: 1.5.2
  * Author: Potomac Technologies, LLC
  * Author URI:  https://potomactech.net
  */
@@ -225,4 +225,36 @@
 		 );
  
 		 if ( ! empty( $final_reply_to ) ) {
-			 $body
+			 $body['reply_to'] = $final_reply_to;
+		 }
+ 
+		 if ( ! empty( $api_headers ) ) {
+			 $body['headers'] = $api_headers;
+		 }
+ 
+		 $args = array(
+			 'method'  => 'POST',
+			 'headers' => array(
+				 'Authorization' => 'Bearer ' . sanitize_text_field($api_token),
+				 'Content-Type'  => 'application/json'
+			 ),
+			 'body'    => wp_json_encode($body),
+			 'timeout' => 15,
+		 );
+ 
+		 $response = wp_remote_post( $url, $args );
+ 
+		 if ( is_wp_error( $response ) ) {
+			 error_log('Cloudflare Email Sender WP_Error: ' . $response->get_error_message());
+			 return false;
+		 }
+ 
+		 $response_code = wp_remote_retrieve_response_code( $response );
+		 if ( $response_code >= 200 && $response_code < 300 ) {
+			 return true;
+		 } else {
+			 error_log('Cloudflare Email Sender API Error (Code ' . sanitize_text_field($response_code) . '): ' . wp_strip_all_tags(wp_remote_retrieve_body( $response )));
+			 return false;
+		 }
+	 }
+ }
