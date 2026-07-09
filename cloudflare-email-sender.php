@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Cloudflare Email Sender
  * Description: Routes WordPress emails through the Cloudflare Email Service REST API.
- * Version: 1.5
+ * Version: 1.5.1
  * Author: Potomac Technologies, LLC
  * Author URI:  https://potomactech.net
  */
@@ -161,13 +161,16 @@
  
 		 $formatted_from = $from_email;
 		 if ( ! empty( $from_name ) ) {
-			 // NEW: Strip existing quotes to prevent breaking string, then wrap in double quotes
 			 $clean_from_name = str_replace( '"', '', $from_name );
 			 $formatted_from = sprintf( '"%s" <%s>', $clean_from_name, $from_email );
 		 }
  
 		 $api_headers = array();
 		 $parsed_reply_to = '';
+
+		 // Determine if the email is HTML or Plain Text
+		 $content_type = apply_filters( 'wp_mail_content_type', 'text/plain' );
+		 $is_html = ( 'text/html' === $content_type );
  
 		 // Extract existing headers sent by WordPress or plugins
 		 if ( ! empty( $headers ) ) {
@@ -182,7 +185,12 @@
 					 $header_name = trim( $parts[0] );
 					 $header_value = trim( $parts[1] );
 					 
-					 if ( strcasecmp( $header_name, 'Reply-To' ) === 0 ) {
+					 // Check for inline content-type header
+					 if ( strcasecmp( $header_name, 'Content-Type' ) === 0 ) {
+						 if ( stripos( $header_value, 'text/html' ) !== false ) {
+							 $is_html = true;
+						 }
+					 } elseif ( strcasecmp( $header_name, 'Reply-To' ) === 0 ) {
 						 $parsed_reply_to = sanitize_text_field( $header_value );
 					 } else {
 						 // Pass other custom headers along to Cloudflare
@@ -191,16 +199,18 @@
 				 }
 			 }
 		 }
+
+		 // Format message body properly based on content type
+		 $final_html = $is_html ? wp_kses_post($message) : wp_kses_post(nl2br($message));
+		 $final_text = $is_html ? wp_strip_all_tags($message) : $message;
  
 		 $settings_reply_to = sanitize_email( get_option('cf_email_reply_to') );
 		 $force_override    = get_option('cf_email_reply_to_override') == 1;
  
 		 $final_reply_to = '';
 		 if ( ! empty( $parsed_reply_to ) ) {
-			 // A Reply-To was passed by a plugin. Do we override it?
 			 $final_reply_to = ( $force_override && ! empty( $settings_reply_to ) ) ? $settings_reply_to : $parsed_reply_to;
 		 } elseif ( ! empty( $settings_reply_to ) ) {
-			 // No Reply-To was passed, use default if it exists
 			 $final_reply_to = $settings_reply_to;
 		 }
  
@@ -210,43 +220,9 @@
 			 'to'      => $to_address,
 			 'from'    => $formatted_from, 
 			 'subject' => sanitize_text_field($subject), 
-			 'html'    => wp_kses_post($message),
-			 'text'    => wp_strip_all_tags($message)
+			 'html'    => $final_html, // Injects HTML or nl2br() formatted text
+			 'text'    => $final_text
 		 );
  
-		 // Add Reply-To as a root parameter, NOT a custom header
 		 if ( ! empty( $final_reply_to ) ) {
-			 $body['reply_to'] = $final_reply_to;
-		 }
- 
-		 // Append the custom headers to the payload if any exist
-		 if ( ! empty( $api_headers ) ) {
-			 $body['headers'] = $api_headers;
-		 }
- 
-		 $args = array(
-			 'method'  => 'POST',
-			 'headers' => array(
-				 'Authorization' => 'Bearer ' . sanitize_text_field($api_token),
-				 'Content-Type'  => 'application/json'
-			 ),
-			 'body'    => wp_json_encode($body),
-			 'timeout' => 15,
-		 );
- 
-		 $response = wp_remote_post( $url, $args );
- 
-		 if ( is_wp_error( $response ) ) {
-			 error_log('Cloudflare Email Sender WP_Error: ' . $response->get_error_message());
-			 return false;
-		 }
- 
-		 $response_code = wp_remote_retrieve_response_code( $response );
-		 if ( $response_code >= 200 && $response_code < 300 ) {
-			 return true;
-		 } else {
-			 error_log('Cloudflare Email Sender API Error (Code ' . sanitize_text_field($response_code) . '): ' . wp_strip_all_tags(wp_remote_retrieve_body( $response )));
-			 return false;
-		 }
-	 }
- }
+			 $body
