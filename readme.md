@@ -1,6 +1,6 @@
 # Cloudflare Email Sender for WordPress
 
-**Version:** 1.5.6
+**Version:** 1.5.5
 
 **Tested up to:** WordPress 7.0.1
 
