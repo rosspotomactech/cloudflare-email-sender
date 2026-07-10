@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Cloudflare Email Sender
  * Description: Routes WordPress emails through the Cloudflare Email Service REST API.
- * Version: 1.5.3
+ * Version: 1.5.4
  * Author: Potomac Technologies, LLC
  * Author URI:  https://potomactech.net
  */
@@ -149,13 +149,17 @@
 			 return false;
 		 }
  
-		 if ( is_array( $to ) ) {
-			 $to_address = sanitize_email( $to[0] );
-		 } else {
-			 $to_address = sanitize_email( explode(',', $to)[0] ); 
+		 // Extract and sanitize multiple 'To' recipients
+		 $to_array = is_array( $to ) ? $to : explode( ',', $to );
+		 $final_to = array();
+		 foreach ( $to_array as $addr ) {
+			 $clean_addr = sanitize_email( $addr );
+			 if ( is_email( $clean_addr ) ) {
+				 $final_to[] = $clean_addr;
+			 }
 		 }
  
-		 if ( ! is_email( $to_address ) ) {
+		 if ( empty( $final_to ) ) {
 			  return false;
 		 }
  
@@ -166,6 +170,8 @@
 		 }
  
 		 $parsed_reply_to = '';
+		 $cc_array = array();
+		 $bcc_array = array();
 
 		 // Determine if the email is HTML or Plain Text
 		 $content_type = apply_filters( 'wp_mail_content_type', 'text/plain' );
@@ -185,18 +191,29 @@
 					 $header_value = trim( $parts[1] );
 					 $header_lower = strtolower($header_name);
 					 
-					 // Check for inline content-type header
 					 if ( $header_lower === 'content-type' ) {
 						 if ( stripos( $header_value, 'text/html' ) !== false ) {
 							 $is_html = true;
 						 }
 					 } elseif ( $header_lower === 'reply-to' ) {
 						 $parsed_reply_to = sanitize_text_field( $header_value );
-					 } 
-					 
-					 // NOTE: We safely discard all other headers (From, X-Mailer, Cc, Bcc, etc.).
-					 // Cloudflare strictly enforces an allowlist for custom headers, and injecting
-					 // standard routing parameters or plugin-specific ones triggers a 10202 schema error.
+					 } elseif ( $header_lower === 'cc' ) {
+						 $cc_emails = explode( ',', $header_value );
+						 foreach ( $cc_emails as $email ) {
+							 $clean_email = sanitize_email( $email );
+							 if ( is_email( $clean_email ) ) {
+								 $cc_array[] = $clean_email;
+							 }
+						 }
+					 } elseif ( $header_lower === 'bcc' ) {
+						 $bcc_emails = explode( ',', $header_value );
+						 foreach ( $bcc_emails as $email ) {
+							 $clean_email = sanitize_email( $email );
+							 if ( is_email( $clean_email ) ) {
+								 $bcc_array[] = $clean_email;
+							 }
+						 }
+					 }
 				 }
 			 }
 		 }
@@ -218,7 +235,7 @@
 		 $url = 'https://api.cloudflare.com/client/v4/accounts/' . sanitize_text_field($account_id) . '/email/sending/send';
  
 		 $body = array(
-			 'to'      => $to_address,
+			 'to'      => count($final_to) === 1 ? $final_to[0] : $final_to, 
 			 'from'    => $formatted_from, 
 			 'subject' => sanitize_text_field($subject), 
 			 'html'    => $final_html, 
@@ -227,6 +244,14 @@
  
 		 if ( ! empty( $final_reply_to ) ) {
 			 $body['reply_to'] = $final_reply_to;
+		 }
+
+		 if ( ! empty( $cc_array ) ) {
+			 $body['cc'] = $cc_array;
+		 }
+
+		 if ( ! empty( $bcc_array ) ) {
+			 $body['bcc'] = $bcc_array;
 		 }
  
 		 $args = array(
