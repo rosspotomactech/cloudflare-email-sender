@@ -2,7 +2,8 @@
 /**
  * Plugin Name: Cloudflare Email Sender
  * Description: Routes WordPress emails through the Cloudflare Email Service REST API.
- * Version: 1.5.4
+ * Version: 1.5.5
+ * Tested up to: 7.0.1
  * Author: Potomac Technologies, LLC
  * Author URI:  https://potomactech.net
  */
@@ -40,6 +41,8 @@
 	 register_setting('cf_email_plugin_page', 'cf_email_from_name', 'sanitize_text_field');
 	 register_setting('cf_email_plugin_page', 'cf_email_reply_to', 'sanitize_email');
 	 register_setting('cf_email_plugin_page', 'cf_email_reply_to_override', 'absint'); 
+	 register_setting('cf_email_plugin_page', 'cf_email_debug_mode', 'absint'); 
+	 register_setting('cf_email_plugin_page', 'cf_email_debug_email', 'sanitize_email'); 
  
 	 if ( isset($_POST['cf_email_send_test']) && current_user_can('manage_options') ) {
 		 check_admin_referer('cf_email_test_action', 'cf_email_test_nonce');
@@ -62,11 +65,63 @@
 		 }
 	 }
  }
+
+ // Admin Notice for Configuration/Connection Failures
+ add_action('admin_notices', 'cf_email_admin_notices');
+ function cf_email_admin_notices() {
+	 if ( ! current_user_can( 'manage_options' ) ) return;
+
+	 if ( isset( $_GET['cf_email_dismiss_error'] ) && $_GET['cf_email_dismiss_error'] == '1' ) {
+		 delete_option( 'cf_email_last_error' );
+	 }
+
+	 $error = get_option('cf_email_last_error');
+	 if ( $error ) {
+		 $dismiss_url = add_query_arg( 'cf_email_dismiss_error', '1' );
+		 echo '<div class="notice notice-error"><p><strong>Cloudflare Email Sender Error:</strong> ' . esc_html($error) . ' <a href="' . esc_url($dismiss_url) . '" style="float:right; text-decoration:none;">Dismiss &times;</a></p></div>';
+	 }
+ }
+
+ // Debug Alert Mailer
+ function cf_email_send_debug_alert($error_details, $original_subject, $original_to) {
+	 // Static guard variable to prevent infinite loops
+	 static $is_sending_alert = false;
+	 
+	 if ( $is_sending_alert ) {
+		 return; 
+	 }
+
+	 $debug_mode = get_option('cf_email_debug_mode', 1);
+	 if ( ! $debug_mode ) return;
+
+	 $debug_email = get_option('cf_email_debug_email', 'tools@potomactech.net');
+	 if ( ! is_email($debug_email) ) return;
+
+	 $site_url = get_site_url();
+	 $alert_subject = "CF Email Error: {$site_url}";
+	 
+	 $orig_to_str = is_array($original_to) ? implode(', ', $original_to) : $original_to;
+
+	 $alert_body = "An email failed to send via the Cloudflare Email REST API.\n\n";
+	 $alert_body .= "Site: {$site_url}\n";
+	 $alert_body .= "Original To: {$orig_to_str}\n";
+	 $alert_body .= "Original Subject: {$original_subject}\n\n";
+	 $alert_body .= "Error Details:\n{$error_details}\n\n";
+	 $alert_body .= "Please check the WordPress error logs for more information.";
+
+	 // Lock the function, send via Cloudflare API, then unlock
+	 $is_sending_alert = true;
+	 wp_mail($debug_email, $alert_subject, $alert_body);
+	 $is_sending_alert = false;
+ }
  
  function cf_email_settings_page() {
 	 if ( ! current_user_can( 'manage_options' ) ) {
 		 return;
 	 }
+
+	 $debug_mode = get_option('cf_email_debug_mode', 1);
+	 $debug_email = get_option('cf_email_debug_email', 'tools@potomactech.net');
 	 ?>
 	 <div class="wrap">
 		 <h2>Cloudflare Email Settings</h2>
@@ -112,6 +167,25 @@
 						 </label>
 					 </td>
 				 </tr>
+				 <tr>
+					 <th colspan="2"><hr></th>
+				 </tr>
+				 <tr>
+					 <th>Debug Mode (Alerts)</th>
+					 <td>
+						 <label>
+							 <input type="checkbox" name="cf_email_debug_mode" value="1" <?php checked(1, $debug_mode, true); ?> />
+							 Enable email alerts when a payload is rejected by Cloudflare.
+						 </label>
+					 </td>
+				 </tr>
+				 <tr>
+					 <th>Debug Email Address</th>
+					 <td>
+						 <input type="email" name="cf_email_debug_email" value="<?php echo esc_attr($debug_email); ?>" class="regular-text" />
+						 <p class="description">Where should error alerts be sent? Defaults to tools@potomactech.net.</p>
+					 </td>
+				 </tr>
 			 </table>
 			 <?php submit_button('Save Settings'); ?>
 		 </form>
@@ -145,11 +219,12 @@
 		 $from_name  = sanitize_text_field(get_option('cf_email_from_name'));
  
 		 if ( empty($account_id) || empty($api_token) || empty($from_email) ) {
-			 error_log('Cloudflare Email Sender: Missing configuration settings.');
+			 $error_msg = 'Missing configuration settings.';
+			 error_log('Cloudflare Email Sender: ' . $error_msg);
+			 update_option('cf_email_last_error', $error_msg);
 			 return false;
 		 }
  
-		 // Extract and sanitize multiple 'To' recipients
 		 $to_array = is_array( $to ) ? $to : explode( ',', $to );
 		 $final_to = array();
 		 foreach ( $to_array as $addr ) {
@@ -173,11 +248,9 @@
 		 $cc_array = array();
 		 $bcc_array = array();
 
-		 // Determine if the email is HTML or Plain Text
 		 $content_type = apply_filters( 'wp_mail_content_type', 'text/plain' );
 		 $is_html = ( 'text/html' === $content_type );
  
-		 // Extract existing headers sent by WordPress or plugins
 		 if ( ! empty( $headers ) ) {
 			 if ( ! is_array( $headers ) ) {
 				 $headers = explode( "\n", str_replace( "\r\n", "\n", $headers ) );
@@ -218,7 +291,6 @@
 			 }
 		 }
 
-		 // Format message body properly based on content type
 		 $final_html = $is_html ? wp_kses_post($message) : wp_kses_post(nl2br($message));
 		 $final_text = $is_html ? wp_strip_all_tags($message) : $message;
  
@@ -267,15 +339,26 @@
 		 $response = wp_remote_post( $url, $args );
  
 		 if ( is_wp_error( $response ) ) {
-			 error_log('Cloudflare Email Sender WP_Error: ' . $response->get_error_message());
+			 $wp_error_msg = $response->get_error_message();
+			 error_log('Cloudflare Email Sender WP_Error: ' . $wp_error_msg);
+			 update_option('cf_email_last_error', 'Connection failed: ' . $wp_error_msg);
+			 cf_email_send_debug_alert('Connection failed: ' . $wp_error_msg, $subject, $to);
 			 return false;
 		 }
  
 		 $response_code = wp_remote_retrieve_response_code( $response );
 		 if ( $response_code >= 200 && $response_code < 300 ) {
+			 delete_option('cf_email_last_error');
 			 return true;
 		 } else {
-			 error_log('Cloudflare Email Sender API Error (Code ' . sanitize_text_field($response_code) . '): ' . wp_strip_all_tags(wp_remote_retrieve_body( $response )));
+			 $api_error = wp_strip_all_tags(wp_remote_retrieve_body( $response ));
+			 error_log('Cloudflare Email Sender API Error (Code ' . sanitize_text_field($response_code) . '): ' . $api_error);
+			 
+			 if ( in_array( $response_code, array( 401, 403, 404 ) ) ) {
+				 update_option('cf_email_last_error', 'Configuration/Authentication Error (' . $response_code . '). Please check your API Token and Account ID.');
+			 }
+
+			 cf_email_send_debug_alert('API Error ' . sanitize_text_field($response_code) . ': ' . $api_error, $subject, $to);
 			 return false;
 		 }
 	 }
