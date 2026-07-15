@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Cloudflare Email Sender
  * Description: Routes WordPress emails through the Cloudflare Email Service REST API.
- * Version: 1.5.5
+ * Version: 1.5.6
  * Tested up to: 7.0.1
  * Author: Potomac Technologies, LLC
  * Author URI:  https://potomactech.net
@@ -19,13 +19,23 @@
  
  // Initialize the update checker
  $myUpdateChecker = PucFactory::buildUpdateChecker(
-	 'https://github.com/rosspotomactech/cloudflare-email-sender', // GitHub URL
+	 'https://github.com/rosspotomactech/cloudflare-email-sender',
 	 __FILE__,
 	 'cloudflare-email-sender'
  );
  
  // Authentication token to access Github library
  $myUpdateChecker->setAuthentication('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');
+
+ // Helper Function: Extracts pure email address from "Name <email@domain.com>" formats
+ if ( ! function_exists('cf_email_extract_pure_address') ) {
+	 function cf_email_extract_pure_address($string) {
+		 if ( preg_match( '/<([^>]+)>/', $string, $matches ) ) {
+			 return sanitize_email( trim( $matches[1] ) );
+		 }
+		 return sanitize_email( trim( $string ) );
+	 }
+ }
 
  // 1. Register Settings Page & Handle Test Email
  add_action('admin_menu', 'cf_email_add_admin_menu');
@@ -84,12 +94,8 @@
 
  // Debug Alert Mailer
  function cf_email_send_debug_alert($error_details, $original_subject, $original_to) {
-	 // Static guard variable to prevent infinite loops
 	 static $is_sending_alert = false;
-	 
-	 if ( $is_sending_alert ) {
-		 return; 
-	 }
+	 if ( $is_sending_alert ) return; 
 
 	 $debug_mode = get_option('cf_email_debug_mode', 1);
 	 if ( ! $debug_mode ) return;
@@ -109,7 +115,6 @@
 	 $alert_body .= "Error Details:\n{$error_details}\n\n";
 	 $alert_body .= "Please check the WordPress error logs for more information.";
 
-	 // Lock the function, send via Cloudflare API, then unlock
 	 $is_sending_alert = true;
 	 wp_mail($debug_email, $alert_subject, $alert_body);
 	 $is_sending_alert = false;
@@ -228,7 +233,8 @@
 		 $to_array = is_array( $to ) ? $to : explode( ',', $to );
 		 $final_to = array();
 		 foreach ( $to_array as $addr ) {
-			 $clean_addr = sanitize_email( $addr );
+			 // NEW: Smart extraction to strip names
+			 $clean_addr = cf_email_extract_pure_address( $addr );
 			 if ( is_email( $clean_addr ) ) {
 				 $final_to[] = $clean_addr;
 			 }
@@ -269,11 +275,13 @@
 							 $is_html = true;
 						 }
 					 } elseif ( $header_lower === 'reply-to' ) {
-						 $parsed_reply_to = sanitize_text_field( $header_value );
+						 // NEW: Smart extraction to strip names
+						 $parsed_reply_to = cf_email_extract_pure_address( $header_value );
 					 } elseif ( $header_lower === 'cc' ) {
 						 $cc_emails = explode( ',', $header_value );
 						 foreach ( $cc_emails as $email ) {
-							 $clean_email = sanitize_email( $email );
+							 // NEW: Smart extraction to strip names
+							 $clean_email = cf_email_extract_pure_address( $email );
 							 if ( is_email( $clean_email ) ) {
 								 $cc_array[] = $clean_email;
 							 }
@@ -281,7 +289,8 @@
 					 } elseif ( $header_lower === 'bcc' ) {
 						 $bcc_emails = explode( ',', $header_value );
 						 foreach ( $bcc_emails as $email ) {
-							 $clean_email = sanitize_email( $email );
+							 // NEW: Smart extraction to strip names
+							 $clean_email = cf_email_extract_pure_address( $email );
 							 if ( is_email( $clean_email ) ) {
 								 $bcc_array[] = $clean_email;
 							 }
