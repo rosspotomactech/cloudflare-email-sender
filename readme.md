@@ -8,7 +8,7 @@
 
 ## Overview
 
-Cloudflare Email Sender is a lightweight, highly secure WordPress plugin that overrides the native `wp_mail()` function to route all outbound website emails through the **Cloudflare Email Service REST API**.
+Cloudflare Email Sender is a lightweight WordPress plugin that overrides the native `wp_mail()` function to route all outbound website emails through the **Cloudflare Email Service REST API**.
 
 This plugin is specifically designed for WordPress sites hosted on servers that lack outbound SMTP capabilities or local Mail Transfer Agents (MTAs). It ensures reliable delivery for system notices, password resets, and advanced form builder submissions (like Elementor, Gravity Forms, and Contact Form 7).
 
