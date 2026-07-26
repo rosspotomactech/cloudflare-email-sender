@@ -2,8 +2,9 @@
 /**
  * Plugin Name: Cloudflare Email Sender
  * Description: Routes WordPress emails through the Cloudflare Email Service REST API.
- * Version: 1.5.6
- * Tested up to: 7.0.1
+ * Version: 1.5.7
+ * Tested up to: 7.0.2
+ * Requires PHP: 7.4
  * Author: Potomac Technologies, LLC
  * Author URI:  https://potomactech.net
  */
@@ -24,9 +25,6 @@
 	 'cloudflare-email-sender'
  );
  
- // Authentication token to access Github library
- $myUpdateChecker->setAuthentication('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');
-
  // Helper Function: Extracts pure email address from "Name <email@domain.com>" formats
  if ( ! function_exists('cf_email_extract_pure_address') ) {
 	 function cf_email_extract_pure_address($string) {
