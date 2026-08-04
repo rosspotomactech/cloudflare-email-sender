@@ -1,0 +1,36 @@
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE and Editor files
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# Log files
+*.log
+debug.log
+error_log
+
+# Composer & Node files (Exclude these if you ever add a build process later)
+node_modules/
+vendor/
+npm-debug.log
+yarn-error.log
+
+# Mac specific
+.AppleDouble
+.LSOverride
+
+# Environment variables
+.env
+.env.*
+
+# Note: We are explicitly NOT ignoring the plugin-update-checker/ directory 
+# because it needs to be committed directly into the repo for distribution.

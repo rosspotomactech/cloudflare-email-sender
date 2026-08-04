@@ -1,0 +1,27 @@
+name: Build Plugin Release ZIP
+
+on:
+  release:
+	types: [published]
+
+jobs:
+  build:
+	runs-on: ubuntu-latest
+	steps:
+	  - name: Checkout code
+		uses: actions/checkout@v4
+
+	  - name: Create Clean Plugin ZIP
+		run: |
+		  PLUGIN_SLUG="cloudflare-email-sender"
+		  mkdir -p build/$PLUGIN_SLUG
+		  rsync -rc --exclude-from='.distignore' ./ build/$PLUGIN_SLUG/
+		  cd build
+		  zip -r $PLUGIN_SLUG.zip $PLUGIN_SLUG
+
+	  - name: Upload ZIP to Release Assets
+		uses: softprops/action-gh-release@v1
+		with:
+		  files: build/cloudflare-email-sender.zip
+		env:
+		  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

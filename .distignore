@@ -1,0 +1,8 @@
+.git
+.github
+.gitignore
+.distignore
+node_modules/
+tests/
+phpunit.xml
+README.md
