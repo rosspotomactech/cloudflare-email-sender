@@ -24,6 +24,9 @@
 	  __FILE__,
 	  'cloudflare-email-sender'
   );
+
+  // Install updates from the release ZIP built by the GitHub Action
+  $myUpdateChecker->getVcsApi()->enableReleaseAssets();
  
   // Helper Function: Extracts pure email address from "Name <email@domain.com>" formats
   if ( ! function_exists('cf_email_extract_pure_address') ) {

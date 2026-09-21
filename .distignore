@@ -1,8 +1,15 @@
+# Files and folders left out of the plugin ZIP (rsync exclude patterns).
 .git
 .github
 .gitignore
+.gitattributes
 .distignore
+.DS_Store
+README.md
+readme.md
+SECURITY.md
 node_modules/
 tests/
 phpunit.xml
-README.md
+# Stray workflow file present in v1.5.7 and earlier
+build-release.yml
