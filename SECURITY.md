@@ -7,8 +7,7 @@ Only the latest minor releases receive security updates.
 | Version | Supported          |
 | ------- | ------------------ |
 | 1.6     | :white_check_mark: |
-| 1.5.7   | :white_check_mark: |
-| < 1.5.7 | :x:                |
+| < 1.6   | :x:                |
 
 ---
 
