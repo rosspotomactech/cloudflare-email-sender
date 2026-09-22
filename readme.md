@@ -1,6 +1,6 @@
 # Cloudflare Email Sender for WordPress
 
-**Version:** 1.5.7
+**Version:** 1.6
 
 **Tested up to:** WordPress 7.0.1
 
@@ -18,6 +18,7 @@ This plugin is specifically designed for WordPress sites hosted on servers that 
 
 * **Direct REST API Integration:** Bypasses local server mail protocols completely, sending payloads securely via HTTPS to Cloudflare.
 * **Smart Content Detection:** Automatically detects whether WordPress is sending Plain Text or HTML emails. It gracefully converts Plain Text line breaks (`\n`) to HTML (`<br>`) so emails always render perfectly in the recipient's inbox.
+* **Outbound Email Copy (BCC/CC):** Automatically copy one or more email addresses on all outbound emails sent from the site. Ideal for client handoffs where the client is designated as the primary site administrator but developers or agencies still require critical site notifications.
 * **Advanced Header Parsing:** Intelligently extracts `Cc`, `Bcc`, and `Reply-To` parameters from form builders and maps them to Cloudflare's strict REST API schema. Unrecognized or restricted headers are safely discarded to prevent payload rejection.
 * **Dynamic Reply-To Logic:** Automatically respects `Reply-To` addresses set by contact forms (so you can reply directly to visitors). Includes an optional setting to force a default "Reply-To" address across the entire site.
 * **Debug Alerts & Loop Protection:** If the Cloudflare API rejects a payload (e.g., schema error), the plugin sends a diagnostic alert to a designated developer email. It utilizes a static recursion guard to guarantee the alert system never triggers an infinite loop.
@@ -55,7 +56,12 @@ Navigate to **Settings** > **Cloudflare Email** in the WordPress admin dashboard
 * **From Address:** The verified email address you are sending from (e.g., `noreply@yourdomain.com`).
 * **From Name (Optional):** The display name for your emails (e.g., `My Awesome Website`).
 * **Default Reply-To (Optional):** The fallback email address for replies if a form plugin doesn't specify one.
+* **Force Reply-To Override:** When checked, always forces the Default Reply-To address, overriding form headers.
+* **Copy Outbound Emails (Optional):** When enabled, automatically copies all outgoing emails to one or more designated email addresses.
+* **Copy Email Addresses:** Comma- or newline-separated list of email addresses to copy.
+* **Copy Method:** Choose between **BCC (Blind Carbon Copy - Recommended)** to protect address privacy from recipients, or **CC (Carbon Copy)**.
 * **Debug Mode:** Enable this to receive diagnostic alerts if an email fails to send.
+* **Debug Email Address:** The email address where error alerts should be sent (defaults to site admin).
 
 *Tip: Use the built-in "Send a Test Email" form at the bottom of the settings page to verify your API connection.*
 
@@ -78,10 +84,14 @@ wp option update cf_email_from_name "Test Corp, Inc."
 wp option update cf_email_reply_to "support@yourdomain.com"
 wp option update cf_email_reply_to_override 1 # Set to 1 to force override, 0 to disable
 
-# 4. Configure Debugging (Optional)
+# 4. Configure Outbound Email Copy (Optional)
+wp option update cf_email_copy_enabled 1 # Set to 1 to enable, 0 to disable
+wp option update cf_email_copy_addresses "dev@potomactech.net, alerts@potomactech.net"
+wp option update cf_email_copy_method "bcc" # Set to "bcc" (default) or "cc"
+
+# 5. Configure Debugging (Optional)
 wp option update cf_email_debug_mode 1 # Set to 1 to enable, 0 to disable
 wp option update cf_email_debug_email "tools@potomactech.net"
-
 ```
 
 ### Forcing Plugin Updates via WP-CLI

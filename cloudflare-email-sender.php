@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Cloudflare Email Sender
  * Description: Routes WordPress emails through the Cloudflare Email Service REST API.
- * Version: 1.5.7
+ * Version: 1.6
  * Tested up to: 7.0.2
  * Requires PHP: 7.4
  * Author: Potomac Technologies, LLC
@@ -34,6 +34,69 @@
 		  return sanitize_email( trim( $string ) );
 	  }
   }
+
+  // Helper Function: Parses and extracts pure email addresses from comma- or newline-separated strings
+  if ( ! function_exists('cf_email_parse_address_list') ) {
+	  function cf_email_parse_address_list( $string ) {
+		  if ( empty( $string ) || ! is_string( $string ) ) {
+			  return array();
+		  }
+		  $raw = preg_split( '/[\r\n,;]+/', $string );
+		  $clean = array();
+		  foreach ( $raw as $entry ) {
+			  $entry = trim( $entry );
+			  if ( '' === $entry ) {
+				  continue;
+			  }
+			  $pure = cf_email_extract_pure_address( $entry );
+			  if ( is_email( $pure ) ) {
+				  $clean[] = $pure;
+			  }
+		  }
+		  return array_values( array_unique( $clean ) );
+	  }
+  }
+
+  // Sanitization callback for copy addresses
+  if ( ! function_exists('cf_email_sanitize_copy_addresses') ) {
+	  function cf_email_sanitize_copy_addresses( $input ) {
+		  if ( empty( $input ) || ! is_string( $input ) ) {
+			  return '';
+		  }
+		  $raw = preg_split( '/[\r\n,;]+/', $input );
+		  $valid_emails = array();
+		  $invalid_emails = array();
+		  foreach ( $raw as $entry ) {
+			  $entry = trim( $entry );
+			  if ( '' === $entry ) {
+				  continue;
+			  }
+			  $pure = cf_email_extract_pure_address( $entry );
+			  if ( is_email( $pure ) ) {
+				  $valid_emails[] = $pure;
+			  } else {
+				  $invalid_emails[] = sanitize_text_field( $entry );
+			  }
+		  }
+		  if ( ! empty( $invalid_emails ) ) {
+			  add_settings_error(
+				  'cf_email_messages',
+				  'cf_email_invalid_copy_emails',
+				  'Some copy email addresses were invalid and omitted: ' . esc_html( implode( ', ', $invalid_emails ) ),
+				  'error'
+			  );
+		  }
+		  return implode( "\n", array_unique( $valid_emails ) );
+	  }
+  }
+
+  // Sanitization callback for copy method
+  if ( ! function_exists('cf_email_sanitize_copy_method') ) {
+	  function cf_email_sanitize_copy_method( $method ) {
+		  $method = strtolower( trim( (string) $method ) );
+		  return in_array( $method, array( 'bcc', 'cc' ), true ) ? $method : 'bcc';
+	  }
+  }
  
   // 1. Register Settings Page & Handle Test Email
   add_action('admin_menu', 'cf_email_add_admin_menu');
@@ -49,6 +112,9 @@
 	  register_setting('cf_email_plugin_page', 'cf_email_from_name', 'sanitize_text_field');
 	  register_setting('cf_email_plugin_page', 'cf_email_reply_to', 'sanitize_email');
 	  register_setting('cf_email_plugin_page', 'cf_email_reply_to_override', 'absint'); 
+	  register_setting('cf_email_plugin_page', 'cf_email_copy_enabled', 'absint'); 
+	  register_setting('cf_email_plugin_page', 'cf_email_copy_addresses', 'cf_email_sanitize_copy_addresses'); 
+	  register_setting('cf_email_plugin_page', 'cf_email_copy_method', 'cf_email_sanitize_copy_method'); 
 	  register_setting('cf_email_plugin_page', 'cf_email_debug_mode', 'absint'); 
 	  register_setting('cf_email_plugin_page', 'cf_email_debug_email', 'sanitize_email'); 
   
@@ -64,7 +130,11 @@
 			  $sent = wp_mail($to_email, $subject, $message);
 			  
 			  if ( $sent ) {
-				  add_settings_error('cf_email_messages', 'cf_email_message', 'Test email sent successfully to ' . esc_html($to_email), 'updated');
+				  $success_msg = 'Test email sent successfully to ' . esc_html($to_email);
+				  if ( get_option('cf_email_copy_enabled') && ! empty(get_option('cf_email_copy_addresses')) ) {
+					  $success_msg .= ' (with copies sent to configured copy address(es))';
+				  }
+				  add_settings_error('cf_email_messages', 'cf_email_message', $success_msg, 'updated');
 			  } else {
 				  add_settings_error('cf_email_messages', 'cf_email_message', 'Failed to send test email. Please check your configuration and server error logs.', 'error');
 			  }
@@ -123,8 +193,11 @@
 		  return;
 	  }
  
-	  $debug_mode = get_option('cf_email_debug_mode', 1);
-	  $debug_email = get_option('cf_email_debug_email', get_option('admin_email'));
+	  $debug_mode     = get_option('cf_email_debug_mode', 1);
+	  $debug_email    = get_option('cf_email_debug_email', get_option('admin_email'));
+	  $copy_enabled   = get_option('cf_email_copy_enabled', 0);
+	  $copy_addresses = get_option('cf_email_copy_addresses', '');
+	  $copy_method    = get_option('cf_email_copy_method', 'bcc');
 	  ?>
 	  <div class="wrap">
 		  <h2>Cloudflare Email Settings</h2>
@@ -168,6 +241,35 @@
 							  <input type="checkbox" name="cf_email_reply_to_override" value="1" <?php checked(1, get_option('cf_email_reply_to_override'), true); ?> />
 							  Always use the Default Reply-To address above, overwriting any Reply-To addresses set by plugins (like contact forms).
 						  </label>
+					  </td>
+				  </tr>
+				  <tr>
+					  <th colspan="2"><hr></th>
+				  </tr>
+				  <tr>
+					  <th>Copy Outbound Emails</th>
+					  <td>
+						  <label>
+							  <input type="checkbox" name="cf_email_copy_enabled" value="1" <?php checked(1, $copy_enabled, true); ?> />
+							  Send a copy of all outbound site emails to the address(es) below.
+						  </label>
+					  </td>
+				  </tr>
+				  <tr>
+					  <th>Copy Email Addresses</th>
+					  <td>
+						  <textarea name="cf_email_copy_addresses" rows="3" cols="50" class="large-text" placeholder="admin@example.com&#10;developer@example.com"><?php echo esc_textarea($copy_addresses); ?></textarea>
+						  <p class="description">Enter one or more email addresses separated by commas or new lines. Useful when a client is the primary site administrator but developers or agencies also need to receive site notifications.</p>
+					  </td>
+				  </tr>
+				  <tr>
+					  <th>Copy Method</th>
+					  <td>
+						  <select name="cf_email_copy_method">
+							  <option value="bcc" <?php selected('bcc', $copy_method); ?>>BCC (Blind Carbon Copy - Recommended)</option>
+							  <option value="cc" <?php selected('cc', $copy_method); ?>>CC (Carbon Copy)</option>
+						  </select>
+						  <p class="description">BCC ensures recipients cannot see the copied email addresses, preserving privacy.</p>
 					  </td>
 				  </tr>
 				  <tr>
@@ -293,6 +395,36 @@
 				  }
 			  }
 		  }
+
+		  $copy_enabled = (int) get_option( 'cf_email_copy_enabled', 0 ) === 1;
+		  if ( $copy_enabled ) {
+			  $copy_raw     = get_option( 'cf_email_copy_addresses', '' );
+			  $copy_emails  = cf_email_parse_address_list( $copy_raw );
+			  $copy_method  = get_option( 'cf_email_copy_method', 'bcc' );
+
+			  if ( ! empty( $copy_emails ) ) {
+				  if ( 'cc' === $copy_method ) {
+					  foreach ( $copy_emails as $copy_email ) {
+						  $copy_lower = strtolower( $copy_email );
+						  $in_to = in_array( $copy_lower, array_map( 'strtolower', $final_to ), true );
+						  $in_cc = in_array( $copy_lower, array_map( 'strtolower', $cc_array ), true );
+						  if ( ! $in_to && ! $in_cc ) {
+							  $cc_array[] = $copy_email;
+						  }
+					  }
+				  } else {
+					  foreach ( $copy_emails as $copy_email ) {
+						  $copy_lower = strtolower( $copy_email );
+						  $in_to  = in_array( $copy_lower, array_map( 'strtolower', $final_to ), true );
+						  $in_cc  = in_array( $copy_lower, array_map( 'strtolower', $cc_array ), true );
+						  $in_bcc = in_array( $copy_lower, array_map( 'strtolower', $bcc_array ), true );
+						  if ( ! $in_to && ! $in_cc && ! $in_bcc ) {
+							  $bcc_array[] = $copy_email;
+						  }
+					  }
+				  }
+			  }
+		  }
  
 		  $final_html = $is_html ? wp_kses_post($message) : wp_kses_post(nl2br($message));
 		  $final_text = $is_html ? wp_strip_all_tags($message) : $message;
@@ -322,11 +454,11 @@
 		  }
  
 		  if ( ! empty( $cc_array ) ) {
-			  $body['cc'] = $cc_array;
+			  $body['cc'] = array_values( array_unique( $cc_array ) );
 		  }
  
 		  if ( ! empty( $bcc_array ) ) {
-			  $body['bcc'] = $bcc_array;
+			  $body['bcc'] = array_values( array_unique( $bcc_array ) );
 		  }
   
 		  $args = array(
