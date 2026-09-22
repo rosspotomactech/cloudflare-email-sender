@@ -1,27 +1,44 @@
-name: Build Plugin Release ZIP
+name: Build plugin ZIP
 
+# Builds <slug>.zip with a <slug>/ folder inside (no version number) and
+# attaches it to the release. Run manually to rebuild an existing release.
 on:
   release:
-	types: [published]
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build and attach (e.g., v1.2.3)
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  PLUGIN_SLUG: cloudflare-email-sender
+  TAG: ${{ github.event.release.tag_name || inputs.tag }}
 
 jobs:
   build:
-	runs-on: ubuntu-latest
-	steps:
-	  - name: Checkout code
-		uses: actions/checkout@v4
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+          fetch-depth: 0
 
-	  - name: Create Clean Plugin ZIP
-		run: |
-		  PLUGIN_SLUG="cloudflare-email-sender"
-		  mkdir -p build/$PLUGIN_SLUG
-		  rsync -rc --exclude-from='.distignore' ./ build/$PLUGIN_SLUG/
-		  cd build
-		  zip -r $PLUGIN_SLUG.zip $PLUGIN_SLUG
+      - name: Build ZIP
+        run: |
+          # Read .distignore from the commit that holds this workflow, so a
+          # rebuilt older tag still uses the current exclusion list.
+          git show "$GITHUB_SHA:.distignore" > "$RUNNER_TEMP/distignore" 2>/dev/null || : > "$RUNNER_TEMP/distignore"
+          mkdir -p "build/$PLUGIN_SLUG"
+          rsync -a --exclude-from="$RUNNER_TEMP/distignore" --exclude=/build/ ./ "build/$PLUGIN_SLUG/"
+          (cd build && zip -rq "$PLUGIN_SLUG.zip" "$PLUGIN_SLUG")
+          unzip -l "build/$PLUGIN_SLUG.zip"
 
-	  - name: Upload ZIP to Release Assets
-		uses: softprops/action-gh-release@v1
-		with:
-		  files: build/cloudflare-email-sender.zip
-		env:
-		  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Attach ZIP to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" "build/$PLUGIN_SLUG.zip" --clobber
