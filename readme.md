@@ -1,6 +1,6 @@
 # Cloudflare Email Sender for WordPress
 
-**Version:** 1.6
+**Version:** 1.6.1
 
 **Tested up to:** WordPress 7.0.1
 
@@ -187,6 +187,12 @@ If an email fails to send, check the WordPress `debug.log` or the diagnostic ale
 ---
 
 ## Changelog
+
+### 1.6.1
+* Fix: HTML email no longer shows its CSS as visible text at the top of the message. The sanitizer removed the `<style>` tag but kept the CSS inside it, which affected any HTML email that carries a responsive media query, such as FluentBooking booking emails.
+* HTML email now keeps its `<style>` block, `<head>`, `<body>` and doctype, so template layouts render as designed.
+* Style blocks are still sanitized: `@import`, `expression()`, `behavior`, `-moz-binding` and `javascript:` are removed, and scripts and event-handler attributes are still stripped.
+* New filter: `cf_email_allowed_html`, to adjust the tags and attributes allowed in HTML email.
 
 ### 1.6
 * New: outbound email copy (BCC or CC) to one or more addresses, for agencies and developers that need site notifications after handoff.

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Cloudflare Email Sender
  * Description: Routes WordPress emails through the Cloudflare Email Service REST API.
- * Version: 1.6
+ * Version: 1.6.1
  * Tested up to: 7.0.2
  * Requires PHP: 7.4
  * Author: Potomac Technologies, LLC
@@ -35,6 +35,58 @@ if ( ! defined( 'ABSPATH' ) ) {
 				return sanitize_email( trim( $matches[1] ) );
 			}
 			return sanitize_email( trim( $string ) );
+		}
+	}
+
+	// Helper Function: Removes CSS that can run script or import remote stylesheets from an email <style> block
+	if ( ! function_exists( 'cf_email_clean_css' ) ) {
+		function cf_email_clean_css( $css ) {
+			$css = preg_replace( '/@import[^;]*;?/i', '', $css );
+			$css = preg_replace( '/(expression\s*\(|behavior\s*:|-moz-binding\s*:|javascript\s*:)/i', '', $css );
+			return $css;
+		}
+	}
+
+	// Helper Function: Sanitizes an HTML email. Allows the same tags as post content, plus the document structure and <style> block that HTML email templates need to keep their layout
+	if ( ! function_exists( 'cf_email_kses_html' ) ) {
+		function cf_email_kses_html( $html ) {
+			$allowed          = wp_kses_allowed_html( 'post' );
+			$allowed['html']  = array(
+				'lang'  => true,
+				'dir'   => true,
+				'xmlns' => true,
+			);
+			$allowed['head']  = array();
+			$allowed['title'] = array();
+			$allowed['meta']  = array(
+				'charset'    => true,
+				'content'    => true,
+				'http-equiv' => true,
+				'name'       => true,
+			);
+			$allowed['style'] = array(
+				'type'  => true,
+				'media' => true,
+			);
+			$allowed['body']  = array(
+				'class'   => true,
+				'id'      => true,
+				'style'   => true,
+				'bgcolor' => true,
+				'dir'     => true,
+			);
+			$allowed          = apply_filters( 'cf_email_allowed_html', $allowed );
+
+			$doctype = preg_match( '/^\s*<!doctype\s+html[^>]*>/i', $html ) ? "<!doctype html>\n" : '';
+			$html    = preg_replace_callback(
+				'#(<style\b[^>]*>)(.*?)(</style>)#is',
+				function ( $matches ) {
+					return $matches[1] . cf_email_clean_css( $matches[2] ) . $matches[3];
+				},
+				$html
+			);
+
+			return $doctype . wp_kses( $html, $allowed );
 		}
 	}
 
@@ -713,7 +765,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 				}
 			}
 
-			$final_html = $is_html ? wp_kses_post( $message ) : wp_kses_post( nl2br( $message ) );
+			$final_html = $is_html ? cf_email_kses_html( $message ) : wp_kses_post( nl2br( $message ) );
 			$final_text = $is_html ? wp_strip_all_tags( $message ) : $message;
 
 			$settings_reply_to = sanitize_email( get_option( 'cf_email_reply_to' ) );
