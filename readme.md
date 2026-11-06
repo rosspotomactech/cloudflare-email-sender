@@ -1,6 +1,6 @@
 # Cloudflare Email Sender for WordPress
 
-**Version:** 1.6.1
+**Version:** 1.6.2
 
 **Tested up to:** WordPress 7.0.1
 
@@ -187,6 +187,9 @@ If an email fails to send, check the WordPress `debug.log` or the diagnostic ale
 ---
 
 ## Changelog
+
+### 1.6.2
+* Update: bundled Plugin Update Checker library upgraded from 5.7 to 6.0 (includes a Parsedown security update). No change to plugin behavior.
 
 ### 1.6.1
 * Fix: HTML email no longer shows its CSS as visible text at the top of the message. The sanitizer removed the `<style>` tag but kept the CSS inside it, which affected any HTML email that carries a responsive media query, such as FluentBooking booking emails.

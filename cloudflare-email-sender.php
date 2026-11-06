@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Cloudflare Email Sender
  * Description: Routes WordPress emails through the Cloudflare Email Service REST API.
- * Version: 1.6.1
+ * Version: 1.6.2
  * Tested up to: 7.0.2
  * Requires PHP: 7.4
  * Author: Potomac Technologies, LLC
@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 // Require the library to allow for automatic updates
 	require 'plugin-update-checker/plugin-update-checker.php';
-	use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
+	use YahnisElsts\PluginUpdateChecker\v6\PucFactory;
 
 	// Initialize the update checker
 	$myUpdateChecker = PucFactory::buildUpdateChecker(
